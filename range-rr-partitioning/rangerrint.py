@@ -1,6 +1,7 @@
 #!/usr/bin/python
 #
-# Interface for the assignement
+# rangerrint interface for the rangerrpart module
+# Author: Anon
 #
 
 import psycopg2

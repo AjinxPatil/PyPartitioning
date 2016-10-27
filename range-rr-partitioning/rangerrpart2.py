@@ -1,4 +1,6 @@
 #!usr/bin/python
+# rangerrpart2 module
+# Author: Ajinkya Patil
 
 import os
 import psycopg2 as ps
@@ -7,7 +9,7 @@ import string
 import sys
 from datetime import datetime
 
-import Interface
+import rangerrint
 
 # ratingstablename global
 master_table = 'ratings'
@@ -303,8 +305,7 @@ def validate(rating=None, partitions=None):
   return False
 
 if __name__ == '__main__':
-  print 'CSE512 Assignment 1 Script started...'
-  conn = Interface.getopenconnection()
+  conn = rangerrint.getopenconnection()
 
   datfilepath = 'test_data.dat'
 
