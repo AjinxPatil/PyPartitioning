@@ -10,10 +10,10 @@ import threading
 
 def ParallelSort (InputTable, SortingColumnName, OutputTable, openconnection):
     
-    # Threads - count, list and thread return value
+    # Threads
     THREAD_COUNT = 5
     threads = []
-    t_returns = [None for x in range(THREAD_COUNT)]
+    t_table = 'ts_'
     
     cur = openconnection.cursor()
     
@@ -35,13 +35,16 @@ def ParallelSort (InputTable, SortingColumnName, OutputTable, openconnection):
 
     # Multithreading
     for i in range(THREAD_COUNT):
+        temp_table = t_table + str(i)
+        cur.execute('DROP TABLE IF EXISTS ' + temp_table)
+        sql = 'CREATE TABLE ' + temp_table + ' AS SELECT * FROM ' + InputTable + \
+                ' LIMIT 0'
+        cur.execute(sql)
         hi = lo + step if i < THREAD_COUNT - 1 else lo + 2 * step
-        sql = 'SELECT * FROM ' + InputTable + ' WHERE ' + SortingColumnName + \
-                ' >= %s AND ' + SortingColumnName + ' < %s ORDER BY ' + \
-                SortingColumnName
-        t = threading.Thread(target=range_sort, args=(sql, lo, hi,
-            openconnection, t_returns,
-            i))
+        sql = 'INSERT INTO ' + temp_table + ' SELECT * FROM ' + InputTable + \
+                ' WHERE ' + SortingColumnName + ' >= %s AND ' + \
+                SortingColumnName + ' < %s ORDER BY ' + SortingColumnName
+        t = threading.Thread(target=range_sort, args=(sql, lo, hi, openconnection))
         threads.append(t)
         t.start()
         lo = hi
@@ -50,20 +53,20 @@ def ParallelSort (InputTable, SortingColumnName, OutputTable, openconnection):
         t.join()
     
     # Aggregate results
-    for result in t_returns:
-        if result is None:
-            continue
-        result_str = [str(x) for x in result]
-        values = ','.join(result_str)
-        sql = 'INSERT INTO ' + OutputTable + ' VALUES ' + values
+    for i in range(THREAD_COUNT):
+        temp_table = t_table + str(i)
+        sql = 'INSERT INTO ' + OutputTable + ' SELECT * FROM ' + temp_table
         cur.execute(sql)
+        cur.execute('DROP TABLE ' + temp_table)
     openconnection.commit()
-    
+
+        
 def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, OutputTable, openconnection):
+    
     # Threads - count, list and thread return value
-    THREAD_COUNT = 1
+    THREAD_COUNT = 5
     threads = []
-    t_returns = [None for x in range(THREAD_COUNT)]
+    t_table = 'ts_'
     
     cur = openconnection.cursor()
 
@@ -86,11 +89,17 @@ def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, 
     
     #Multithreading
     for i in range(THREAD_COUNT):
+        temp_table = t_table + str(i)
+        cur.execute('DROP TABLE IF EXISTS ' + temp_table)
+        sql = 'CREATE TABLE ' + temp_table + ' AS SELECT * FROM (' + sql2 + \
+                ') AS lf INNER JOIN (' + sql1 + ') AS rt ON rt.' + \
+                Table1JoinColumn + ' = lf.' + Table2JoinColumn + \
+                ' WHERE 1 = 0'
+        cur.execute(sql)
         sql_left = 'SELECT * FROM ' + InputTable1 + ' ORDER BY ' + \
                 Table1JoinColumn + ' LIMIT %s OFFSET %s'
         sql_limits = 'SELECT MAX(' + Table1JoinColumn + ') AS hi, MIN(' + \
-                Table1JoinColumn + ') AS lo FROM (' + sql_left + \
-                ') AS lf'
+                        Table1JoinColumn + ') AS lo FROM (' + sql_left + ') AS lf'
         cur.execute(sql_limits, (limit, offset))
         max_, min_ = cur.fetchone()
         sql_right = 'SELECT * FROM ' + InputTable2 + ' WHERE ' + \
@@ -98,8 +107,10 @@ def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, 
                 ' <= %s'
         if i == THREAD_COUNT - 1:
             limit  = count - i * limit
-        t = threading.Thread(target=range_join, args=(sql_left, sql_right,
-            Table1JoinColumn, Table2JoinColumn, limit, offset, min_, max_, openconnection, t_returns, i))
+        sql = 'INSERT INTO ' + temp_table + ' SELECT * FROM ('+ sql_right + \
+                ') AS rt INNER JOIN (' + sql_left + ') AS lf' + \
+                ' ON lf.' + Table1JoinColumn + ' = rt.' + Table2JoinColumn
+        t = threading.Thread(target=range_join, args=(sql, limit, offset, min_, max_, openconnection))
         threads.append(t)
         t.start()
         offset = limit
@@ -108,26 +119,20 @@ def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, 
         t.join()
     
     # Aggregate results
-    for result in t_returns:
-        if result is None:
-            continue
-        result_str = [str(x) for x in result]
-        values = ','.join(result_str)
-        sql = 'INSERT INTO ' + OutputTable + ' VALUES ' + values
+    for i in range(THREAD_COUNT):
+        temp_table = t_table + str(i)
+        sql = 'INSERT INTO ' + OutputTable + ' SELECT * FROM ' + temp_table
         cur.execute(sql)
+        cur.execute('DROP TABLE ' + temp_table)
     openconnection.commit()
 
-def range_join(lq, rq, key1, key2, limit, offset, lo, hi, conn, t_returns, index):
-    query = 'SELECT * FROM ('+ rq + ') AS rt INNER JOIN (' + lq + ')' + \
-            ' AS lf ON lf.' + key1 + ' = rt.' + key2
+def range_join(query, limit, offset, lo, hi, conn):
     cur = conn.cursor()
     cur.execute(query, (lo, hi, limit, offset))
-    t_returns[index] = cur.fetchall()
 
-def range_sort(query, lo, hi, conn, t_returns, index):
+def range_sort(query, lo, hi, conn):
     cur = conn.cursor()
     cur.execute(query, (lo, hi))
-    t_returns[index] = cur.fetchall()
 
 def getOpenConnection(user='postgres', password='1234', dbname='ddsassignment3'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
